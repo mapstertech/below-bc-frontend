@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset='utf-8' />
+    <title>Display a map</title>
+    <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+    <script src='https://api.tiles.mapbox.com/mapbox-gl-js/v1.5.1/mapbox-gl.js'></script>
+    <link href='https://api.tiles.mapbox.com/mapbox-gl-js/v1.5.1/mapbox-gl.css' rel='stylesheet' />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+
+        ;
+    </style>
+</head>
+
+<body>
+    <div id='map'></div>
+    <script>
+        mapboxgl.accessToken = 'pk.eyJ1IjoiaW5kaWdlbm91c21hcCIsImEiOiJjamRnaWZiYXMwazh0MnhwZ2pvNm1icGFmIn0.b4ie-szZ4kLfPH0B4_WP9w'
+        var map = new mapboxgl.Map({
+            container: 'map', // container id
+            style: 'mapbox://styles/mapbox/streets-v11', // stylesheet location
+            center: [ -124.1455078125, 53.56641415275043 ],
+            zoom: 5 // starting zoom
+        });
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.5.0/proj4-src.js"></script>
+    <script>
+        async function main() {
+            const waait = (millis = 0) => new Promise((resolve) => setTimeout(resolve, millis))
+            async function getAirtableRecords(offset, records = []) {
+                const baseUrl = 'https://api.airtable.com/v0/app6558bjuvPyZZ9Y/VirtualCollections?view=Grid%20view'
+                const urlWithOffset = offset ? `${baseUrl}&offset=${offset}` : baseUrl
+                const resp = await fetch(urlWithOffset, {
+                    headers: {
+                        'Authorization': 'Bearer keyaaBEpyDcNIBvpb'
+                    }
+                })
+                // airtable rate limits their api so waiting a bit may be necessary
+                // "The API is limited to 5 requests per second per base. If you exceed this rate, you will receive a 429 status code and will need to wait 30 seconds before subsequent requests will succeed."
+                // await waait(50)
+                const airtableJson = await resp.json()
+                // if response contains an offset, that means there are more records. keep fetching until no offset is returned
+                if (airtableJson.offset) {
+                    records = [...records, ...airtableJson.records]
+                    return getAirtableRecords(airtableJson.offset, records)
+                } else {
+                    return [...records, ...airtableJson.records]
+                }
+            }
+
+            const records = await getAirtableRecords()
+            const featureFields = records
+                .filter(({ fields }) => {
+                    return fields.Datum && fields.UTM_E && fields.UTM_N
+                })
+                .map(({ fields }) => {
+                    // console.log('fields', fields)
+                    return {
+                        UTM_zone: fields.Datum.split(' ')[0],
+                        UTM_E: fields.UTM_E,
+                        UTM_N: fields.UTM_N,
+                        ...fields
+                    }
+                })
+                .map(({ UTM_E, UTM_N, UTM_zone, ...fields }) => {
+                    const utm = `+proj=utm +zone=${UTM_zone}`;
+                    const wgs84 = "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs";
+                    return {
+                        ...fields,
+                        coordinates: proj4(utm, wgs84, [Number(UTM_E), Number(UTM_N)])
+                    }
+                })
+            console.log('featureFields', featureFields)
+
+            const features = featureFields.map((fields) => {
+                return {
+                    type: 'Feature',
+                    properties: { ...fields },
+                    geometry: {
+                        type: 'Point',
+                        coordinates: fields.coordinates
+                    }
+                }
+            })
+
+            if (!map.getSource('mineral-data')) {
+                map.addSource('mineral-data', {
+                    type: 'geojson',
+                    data: {
+                        type: 'FeatureCollection',
+                        features
+                    }
+                })
+
+                map.addLayer({
+                    id: 'mineral-data',
+                    type: 'circle',
+                    source: 'mineral-data',
+                    paint: {
+                        'circle-color': '#f29c4b',
+                        'circle-opacity': 0.8,
+                        'circle-radius': 10
+                    }
+                })
+            }
+        }
+
+        main()
+    </script>
+</body>
+
+</html>
