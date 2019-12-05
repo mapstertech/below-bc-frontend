@@ -31,7 +31,7 @@
         var map = new mapboxgl.Map({
             container: 'map', // container id
             style: 'mapbox://styles/mapbox/streets-v11', // stylesheet location
-            center: [ -124.1455078125, 53.56641415275043 ],
+            center: [-124.1455078125, 53.56641415275043],
             zoom: 5 // starting zoom
         });
     </script>
@@ -112,6 +112,44 @@
                         'circle-color': '#f29c4b',
                         'circle-opacity': 0.8,
                         'circle-radius': 10
+                    }
+                })
+
+                function getPopupHtml(feature) {
+                    const { properties } = feature
+                    let html = ''
+                    for (let property in properties) {
+                        if (property === 'Location' && properties['GoogleMap']) {
+                            html += `
+                                <div>
+                                    <p><b>${property}</b>:  <a href="${properties['GoogleMap']}">${properties[property]}</a></p>
+                                </div>
+                            `
+                        } else if (property !== 'GoogleMap') {
+                            html += `
+                                <div>
+                                    <p><b>${property}</b>: ${properties[property]}</p>
+                                </div>
+                            `
+                        }
+                    }
+                    return html
+                }
+
+                map.on('click', 'mineral-data', (e) => {
+                    const feature = e.features[0]
+                    if (feature) {
+                        const coordinates = feature.geometry.coordinates
+                        new mapboxgl.Popup()
+                            .setLngLat(coordinates)
+                            .setHTML(`
+                                <div>
+                                    <div class="popup-content">
+                                    ${getPopupHtml(feature)}
+                                    </div>
+                                </div>
+                            `)
+                            .addTo(map);
                     }
                 })
             }
